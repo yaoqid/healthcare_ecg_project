@@ -65,7 +65,7 @@ Examples:
 
 - **NVIDIA GPU (CUDA 12.1):**
   ```bash
-  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+  pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
   ```
 - **CPU-only (any OS):**
   ```bash

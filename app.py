@@ -1,11 +1,11 @@
-"""
-🩺 ECG Heart Disease Detection — Streamlit App
+﻿"""
+🩺 ECG Heart Disease Detection - Streamlit App
 -------------------------------------------------
 The full pipeline in one interactive UI:
   1. Upload an ECG signal or use a demo
   2. CNN classifies the ECG image
   3. LSTM predicts patient risk trend
-  4. Claude LLM explains everything in plain English
+  4. DeepSeek LLM explains everything in plain English
 
 Run: streamlit run app.py
 """
@@ -29,9 +29,9 @@ from data.data_loader import (
 )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 # Page config
-# ─────────────────────────────────────────────────────────────────────────────
+# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 st.set_page_config(
     page_title="ECG Heart Disease AI",
     page_icon="🫀",
@@ -39,9 +39,9 @@ st.set_page_config(
 )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 # Load models (cached so they only load once)
-# ─────────────────────────────────────────────────────────────────────────────
+# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 @st.cache_resource
 def load_models():
     cnn  = get_cnn(num_classes=2)
@@ -54,25 +54,25 @@ def load_models():
         cnn.load_state_dict(torch.load("checkpoints/cnn_best.pt", map_location="cpu"))
         st.sidebar.success("✅ CNN weights loaded")
     else:
-        st.sidebar.warning("⚠️ CNN using random weights — train first!")
+        st.sidebar.warning("⚠️ CNN using random weights - train first!")
 
     if os.path.exists("checkpoints/lstm_best.pt"):
         lstm.load_state_dict(torch.load("checkpoints/lstm_best.pt", map_location="cpu"))
         st.sidebar.success("✅ LSTM weights loaded")
     else:
-        st.sidebar.warning("⚠️ LSTM using random weights — train first!")
+        st.sidebar.warning("⚠️ LSTM using random weights - train first!")
 
     return cnn, lstm
 
 
 @st.cache_resource
 def load_assistant():
-    return ECGAssistant()   # reads ANTHROPIC_API_KEY from env
+    return ECGAssistant()   # reads DEEPSEEK_API_KEY from env
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 # Prediction helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 CLASS_NAMES = ["Normal", "Abnormal"]
 RISK_NAMES  = ["Low Risk", "High Risk"]
 
@@ -125,15 +125,15 @@ def predict_lstm(model, sequence: np.ndarray) -> dict:
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 # UI
-# ─────────────────────────────────────────────────────────────────────────────
+# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 def main():
     st.title("🫀 ECG Heart Disease Detection & AI Assistant")
     st.markdown(
         "**AI-powered ECG analysis using CNN (image classification) + "
-        "LSTM (risk trend prediction) + Claude LLM (plain-English explanations)**"
+        "LSTM (risk trend prediction) + DeepSeek LLM (plain-English explanations)**"
     )
     st.divider()
 
@@ -141,21 +141,21 @@ def main():
     cnn_model, lstm_model = load_models()
     assistant = load_assistant()
 
-    # ── Sidebar: controls ────────────────────────────────────────────────────
+    # 鈹€鈹€ Sidebar: controls 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     st.sidebar.header("⚙️ Settings")
     demo_mode = st.sidebar.radio(
         "Data source",
         ["🎲 Use demo patient (synthetic)", "📂 Enter custom values"],
     )
     api_key_input = st.sidebar.text_input(
-        "Anthropic API Key (optional)", type="password",
-        help="Set ANTHROPIC_API_KEY env var OR paste here"
+        "DeepSeek API Key (optional)", type="password",
+        help="Set DEEPSEEK_API_KEY env var OR paste here"
     )
     if api_key_input:
-        assistant.client.api_key = api_key_input
+        assistant.set_api_key(api_key_input)
 
-    # ── Generate or receive data ─────────────────────────────────────────────
-    st.header("📊 Step 1 — Patient Data")
+    # 鈹€鈹€ Generate or receive data 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    st.header("📊 Step 1 - Patient Data")
 
     if demo_mode.startswith("🎲"):
         seed = st.sidebar.slider("Random patient seed", 0, 99, 42)
@@ -178,7 +178,7 @@ def main():
         seq_df = generate_synthetic_sequences(n_patients=1, seq_len=18)
         sequence = seq_df[FEATURE_COLUMNS].values[:12]
 
-    # ── Show ECG plot ─────────────────────────────────────────────────────────
+    # 鈹€鈹€ Show ECG plot 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     col1, col2 = st.columns(2)
 
     with col1:
@@ -208,8 +208,8 @@ def main():
 
     st.divider()
 
-    # ── Run models ───────────────────────────────────────────────────────────
-    st.header("🧠 Step 2 — AI Analysis")
+    # 鈹€鈹€ Run models 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    st.header("🧠 Step 2 - AI Analysis")
 
     if st.button("🔍 Analyse Patient", type="primary"):
         with st.spinner("Running CNN analysis..."):
@@ -218,18 +218,22 @@ def main():
         with st.spinner("Running LSTM risk assessment..."):
             lstm_result = predict_lstm(lstm_model, sequence)
 
-        # Store in session state so the chat can access them
-        st.session_state["cnn_result"]  = cnn_result
+        # Store in session state so analysis stays visible across reruns (e.g., chat input)
+        st.session_state["cnn_result"] = cnn_result
         st.session_state["lstm_result"] = lstm_result
         assistant.set_patient_context(cnn_result, lstm_result)
-        st.session_state["assistant"]   = assistant
+        st.session_state["assistant"] = assistant
         st.session_state["chat_history"] = []
+
+    if "cnn_result" in st.session_state and "lstm_result" in st.session_state:
+        cnn_result = st.session_state["cnn_result"]
+        lstm_result = st.session_state["lstm_result"]
 
         # Results cards
         col3, col4 = st.columns(2)
 
         with col3:
-            color = "🔴" if cnn_result["class_id"] == 1 else "🟢"
+            color = "🔶" if cnn_result["class_id"] == 1 else "🟝"
             st.metric(
                 f"{color} CNN Finding",
                 cnn_result["prediction"],
@@ -239,7 +243,7 @@ def main():
             st.caption(f"Abnormal probability: {cnn_result['prob_abnormal']*100:.1f}%")
 
         with col4:
-            risk_color = "🔴" if cnn_result["class_id"] == 1 else "🟢"
+            risk_color = "🔶" if cnn_result["class_id"] == 1 else "🟝"
             st.metric(
                 f"{risk_color} LSTM Risk Level",
                 lstm_result["risk_label"],
@@ -252,7 +256,7 @@ def main():
         st.subheader("🔎 LSTM Attention — Which months influenced the prediction most?")
         attn = np.array(lstm_result["attention_weights"])
         fig3, ax3 = plt.subplots(figsize=(10, 2))
-        bars = ax3.bar(range(1, 13), attn, color=["#e63946" if a == attn.max() else "#457b9d" for a in attn])
+        ax3.bar(range(1, 13), attn, color=["#e63946" if a == attn.max() else "#457b9d" for a in attn])
         ax3.set_xlabel("Month")
         ax3.set_ylabel("Attention Weight")
         ax3.set_title("Temporal Attention Weights (red = most important)")
@@ -261,11 +265,11 @@ def main():
 
     st.divider()
 
-    # ── LLM Chat ─────────────────────────────────────────────────────────────
-    st.header("💬 Step 3 — Ask the AI Assistant")
+    # 鈹€鈹€ LLM Chat 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    st.header("💬 Step 3 - Ask the AI Assistant")
     st.markdown(
         "Ask questions in plain English about the ECG results. "
-        "Powered by **Claude**."
+        "Powered by **DeepSeek**."
     )
 
     if "assistant" not in st.session_state:
@@ -291,8 +295,8 @@ def main():
                         reply = st.session_state["assistant"].chat(prompt)
                     except Exception as e:
                         reply = (
-                            f"⚠️ Could not connect to Claude API: {e}\n\n"
-                            "Please set your ANTHROPIC_API_KEY environment variable."
+                            f"⚠️ Could not connect to DeepSeek API: {e}\n\n"
+                            "Please set your DEEPSEEK_API_KEY environment variable."
                         )
                 st.markdown(reply)
                 st.session_state["chat_history"].append({"role": "assistant", "content": reply})

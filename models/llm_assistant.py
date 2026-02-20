@@ -1,20 +1,16 @@
 """
-LLM Assistant — Powered by Claude API
+LLM Assistant - Powered by DeepSeek API
 ---------------------------------------
 Lets doctors or patients ask plain-English questions about ECG results.
-
-Example questions:
-  "What does it mean that my ECG shows an abnormal pattern?"
-  "My risk trend has been increasing for 3 months. Should I be worried?"
-  "Explain the attention weights — which part of my history matters most?"
 """
 
-import anthropic
 import json
+import os
 from typing import Optional
 
+from openai import OpenAI
 
-# ── System prompt: gives Claude its role ─────────────────────────────────────
+
 SYSTEM_PROMPT = """You are a helpful, friendly, and empathetic AI medical assistant
 specialising in ECG (electrocardiogram) analysis and heart health.
 
@@ -28,35 +24,46 @@ Your role:
 When given structured result data (JSON), always reference specific numbers in your explanation.
 Format your responses with clear sections using markdown.
 
-⚠️ IMPORTANT: Always end responses with a reminder that this is AI assistance only
+IMPORTANT: Always end responses with a reminder that this is AI assistance only
 and should not replace professional medical advice.
 """
 
 
 class ECGAssistant:
-    """Claude-powered assistant that explains ECG results in plain English."""
+    """DeepSeek-powered assistant that explains ECG results in plain English."""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: str = "deepseek-chat",
+        base_url: str = "https://api.deepseek.com",
+    ):
         """
         Initialise the assistant.
-        api_key: your Anthropic API key (or set ANTHROPIC_API_KEY env variable)
+        api_key: your DeepSeek API key (or set DEEPSEEK_API_KEY env variable)
         """
-        # Uses ANTHROPIC_API_KEY env var automatically if api_key is None
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.conversation_history = []   # keeps track of the whole conversation
-        self.model = "claude-opus-4-6"
+        self._api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
+        self._base_url = base_url
+        self.client = OpenAI(api_key=self._api_key, base_url=base_url) if self._api_key else None
+        self.conversation_history = []
+        self.model = model
+
+    def set_api_key(self, api_key: str):
+        """Update API key at runtime from UI input."""
+        self._api_key = api_key
+        self.client = OpenAI(api_key=self._api_key, base_url=self._base_url)
+
+    def _require_client(self):
+        """Ensure API client exists before making requests."""
+        if self.client is None:
+            raise ValueError(
+                "DeepSeek API key not set. Configure DEEPSEEK_API_KEY "
+                "or paste the key in the app sidebar."
+            )
+        return self.client
 
     def set_patient_context(self, cnn_result: dict, lstm_result: dict):
-        """
-        Inject the model results as context so Claude can reference them.
-
-        cnn_result example:
-            {"prediction": "Abnormal", "confidence": 0.87, "class_id": 1}
-
-        lstm_result example:
-            {"risk_label": "High Risk", "risk_score": 0.74,
-             "trend": "increasing", "most_important_month": 10}
-        """
+        """Inject model results as context so the assistant can reference them."""
         context_message = f"""
 [PATIENT ECG ANALYSIS RESULTS]
 
@@ -73,85 +80,77 @@ LSTM Temporal Risk Assessment:
 
 Please be ready to answer questions about these results.
 """
-        # Add as the first user message so Claude has the context
         self.conversation_history = [
             {"role": "user", "content": context_message},
-            {"role": "assistant", "content": (
-                "Thank you — I've reviewed the patient's ECG analysis results. "
-                "I can see the CNN detected an abnormal ECG pattern with high confidence, "
-                "and the LSTM risk model shows an increasing risk trend. "
-                "I'm ready to explain these findings. What would you like to know?"
-            )},
+            {
+                "role": "assistant",
+                "content": (
+                    "Thank you - I've reviewed the patient's ECG analysis results. "
+                    "I can see the CNN detected an abnormal ECG pattern with high confidence, "
+                    "and the LSTM risk model shows an increasing risk trend. "
+                    "I'm ready to explain these findings. What would you like to know?"
+                ),
+            },
         ]
 
     def chat(self, user_message: str) -> str:
-        """
-        Send a message and get a response.
-        Maintains conversation history for context-aware responses.
-        """
-        # Add the new user message to history
-        self.conversation_history.append({
-            "role": "user",
-            "content": user_message
-        })
+        """Send a message and get a response with full conversation context."""
+        self.conversation_history.append({"role": "user", "content": user_message})
 
-        # Call Claude API
-        response = self.client.messages.create(
+        client = self._require_client()
+        response = client.chat.completions.create(
             model=self.model,
             max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=self.conversation_history,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                *self.conversation_history,
+            ],
         )
 
-        # Extract the reply text
-        reply = response.content[0].text
-
-        # Add assistant reply to history (for multi-turn conversation)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": reply
-        })
-
+        reply = response.choices[0].message.content or ""
+        self.conversation_history.append({"role": "assistant", "content": reply})
         return reply
 
     def reset_conversation(self):
         """Start a fresh conversation (clears history)."""
         self.conversation_history = []
-        print("🔄 Conversation reset.")
+        print("Conversation reset.")
 
     def quick_summary(self, cnn_result: dict, lstm_result: dict) -> str:
-        """
-        Generate a one-shot plain-English summary without interactive chat.
-        Good for showing a summary card in the UI.
-        """
+        """Generate a one-shot plain-English summary without interactive chat."""
         prompt = f"""
 Please provide a brief, patient-friendly summary (3-4 sentences) of these ECG results:
 
 CNN Result: {json.dumps(cnn_result)}
 LSTM Result: {json.dumps(lstm_result)}
 
-Keep it simple — the patient is not medically trained.
+Keep it simple - the patient is not medically trained.
 """
-        response = self.client.messages.create(
+        client = self._require_client()
+        response = client.chat.completions.create(
             model=self.model,
             max_tokens=300,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
         )
-        return response.content[0].text
+        return response.choices[0].message.content or ""
 
 
-# ── Demo / manual test ────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # Example results from our CNN + LSTM models
-    cnn_result  = {"prediction": "Abnormal", "confidence": 0.87, "class_id": 1}
-    lstm_result = {"risk_label": "High Risk", "risk_score": 0.74,
-                   "trend": "increasing", "most_important_month": 10}
+    cnn_result = {"prediction": "Abnormal", "confidence": 0.87, "class_id": 1}
+    lstm_result = {
+        "risk_label": "High Risk",
+        "risk_score": 0.74,
+        "trend": "increasing",
+        "most_important_month": 10,
+    }
 
-    assistant = ECGAssistant()   # reads ANTHROPIC_API_KEY from environment
+    assistant = ECGAssistant()  # reads DEEPSEEK_API_KEY from environment if configured
     assistant.set_patient_context(cnn_result, lstm_result)
 
-    print("🩺 ECG Assistant ready. Type 'quit' to exit.\n")
+    print("ECG Assistant ready. Type 'quit' to exit.\n")
     while True:
         user_input = input("You: ").strip()
         if user_input.lower() in ("quit", "exit", "q"):
