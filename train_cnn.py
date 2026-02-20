@@ -80,13 +80,24 @@ def evaluate(model, loader, criterion, device):
     return total_loss / len(loader), correct / total, all_preds, all_labels
 
 
+
+
+def get_best_device() -> torch.device:
+    """Select the best available accelerator in priority: CUDA > MPS > CPU."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main training loop
 # ─────────────────────────────────────────────────────────────────────────────
 
 def train(args):
     # ── Setup ──────────────────────────────────────────────────────────────
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_best_device()
     print(f"🖥️  Training on: {device}")
     os.makedirs("checkpoints", exist_ok=True)
 
@@ -102,7 +113,7 @@ def train(args):
     # ── Loss, Optimiser, Scheduler ─────────────────────────────────────────
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    scheduler = ReduceLROnPlateau(optimizer, mode="min", patience=3, factor=0.5, verbose=True)
+    scheduler = ReduceLROnPlateau(optimizer, mode="min", patience=3, factor=0.5)
 
     # ── Training Loop ──────────────────────────────────────────────────────
     print(f"\n🚀 Starting training for {args.epochs} epochs...\n")

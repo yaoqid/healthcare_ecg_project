@@ -62,8 +62,17 @@ def evaluate(model, loader, criterion, device):
     return total_loss / len(loader), correct / total
 
 
+def get_best_device() -> torch.device:
+    """Select the best available accelerator in priority: CUDA > MPS > CPU."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def train(args):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_best_device()
     print(f"🖥️  Training on: {device}")
     os.makedirs("checkpoints", exist_ok=True)
 
