@@ -97,6 +97,19 @@ python train_cnn.py --epochs 15 --n-samples 1000
 python train_lstm.py --epochs 30 --n-patients 300
 ```
 
+With real PTB-XL data:
+
+```bash
+python train_cnn.py --real-data --ptbxl-dir /path/to/ptb-xl --sampling-rate 100
+python train_lstm.py --real-data --ptbxl-dir /path/to/ptb-xl --sampling-rate 100 --seq-len 3
+```
+
+Recommended for the improved LSTM pipeline:
+
+```bash
+python train_lstm.py --real-data --ptbxl-dir /path/to/ptb-xl --sampling-rate 100 --seq-len 3 --selection-metric balanced_acc --threshold-metric balanced_acc
+```
+
 ---
 
 ## 🌐 Run the App
@@ -106,6 +119,11 @@ streamlit run app.py
 ```
 
 Then open: http://localhost:8501
+
+The app now supports three modes:
+- Synthetic demo patient
+- Custom manually entered values
+- Real PTB-XL record browsing from a local extracted PTB-XL folder
 
 ---
 
@@ -117,6 +135,10 @@ No download needed. Useful for portability testing across machines.
 ### Option B: PTB-XL real ECG data
 - https://physionet.org/content/ptb-xl/1.0.3/
 - Install `wfdb` (already in `requirements.txt`)
+- Extract the dataset so files such as `ptbxl_database.csv`, `scp_statements.csv`, and `records100/` or `records500/` sit inside your PTB-XL folder.
+- The CNN loader uses the official `strat_fold` split: folds `1-8` train, fold `9` validation.
+- The LSTM loader builds patient sequences from repeated PTB-XL records sorted by `recording_date`, using lightweight waveform-derived features. Since PTB-XL is not a fixed monthly follow-up dataset, shorter `--seq-len` values such as `2` or `3` are usually more practical on real data.
+- In the Streamlit app, choose `Load PTB-XL record` and paste the extracted PTB-XL folder path in the sidebar to browse real records interactively.
 
 ---
 
@@ -138,3 +160,4 @@ No download needed. Useful for portability testing across machines.
 ## ⚠️ Medical Disclaimer
 
 This project is for **education/research only** and is **not** a diagnostic medical device.
+

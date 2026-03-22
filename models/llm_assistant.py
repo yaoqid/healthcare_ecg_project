@@ -80,18 +80,48 @@ LSTM Temporal Risk Assessment:
 
 Please be ready to answer questions about these results.
 """
+        cnn_label = cnn_result.get("prediction", "Unknown")
+        cnn_confidence = cnn_result.get("confidence", 0) * 100
+        risk_label = lstm_result.get("risk_label", "Unknown")
+        risk_score = lstm_result.get("risk_score", 0)
+        trend = lstm_result.get("trend", "Unknown")
+        important_month = lstm_result.get("most_important_month", "N/A")
+
+        opening_summary = (
+            "Thank you - I've reviewed the patient's ECG analysis results. "
+            f"The CNN classified the ECG as {cnn_label.lower()} with {cnn_confidence:.1f}% confidence. "
+            f"The LSTM risk model assessed this patient as {risk_label.lower()} "
+            f"with a risk score of {risk_score:.2f} and a {trend} trend. "
+            f"The most influential point in the history was month {important_month}. "
+            "I'm ready to explain what this means."
+        )
         self.conversation_history = [
             {"role": "user", "content": context_message},
             {
                 "role": "assistant",
-                "content": (
-                    "Thank you - I've reviewed the patient's ECG analysis results. "
-                    "I can see the CNN detected an abnormal ECG pattern with high confidence, "
-                    "and the LSTM risk model shows an increasing risk trend. "
-                    "I'm ready to explain these findings. What would you like to know?"
-                ),
+                "content": opening_summary,
             },
         ]
+
+    @staticmethod
+    def fallback_summary(cnn_result: dict, lstm_result: dict) -> str:
+        """Return a local summary when no API key is configured."""
+        cnn_label = cnn_result.get("prediction", "Unknown")
+        cnn_confidence = cnn_result.get("confidence", 0) * 100
+        risk_label = lstm_result.get("risk_label", "Unknown")
+        risk_score = lstm_result.get("risk_score", 0)
+        trend = lstm_result.get("trend", "Unknown")
+        important_month = lstm_result.get("most_important_month", "N/A")
+
+        return (
+            "### Quick Summary\n"
+            f"- CNN finding: **{cnn_label}** ({cnn_confidence:.1f}% confidence)\n"
+            f"- LSTM risk level: **{risk_label}** with score **{risk_score:.2f}**\n"
+            f"- Trend over time: **{trend}**\n"
+            f"- Most influential time point: **Month {important_month}**\n\n"
+            "No DeepSeek API key is configured, so this is a local summary rather than a live LLM explanation.\n\n"
+            "This is AI assistance only and should not replace professional medical advice."
+        )
 
     def chat(self, user_message: str) -> str:
         """Send a message and get a response with full conversation context."""

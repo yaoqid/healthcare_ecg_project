@@ -9,6 +9,7 @@ Dataset: PTB-XL (https://physionet.org/content/ptb-xl/1.0.3/)
 Download: pip install wfdb
 """
 
+import ast
 import os
 import numpy as np
 import pandas as pd
@@ -20,6 +21,11 @@ matplotlib.use("Agg")   # non-interactive backend
 import matplotlib.pyplot as plt
 from PIL import Image
 import io
+
+try:
+    import wfdb
+except ImportError:  # pragma: no cover - optional dependency at runtime
+    wfdb = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -112,6 +118,249 @@ FEATURE_COLUMNS = [
     "t_wave_amplitude",  # mV
     "rr_variance",       # heart rate variability proxy
 ]
+
+PTBXL_TRAIN_FOLDS = tuple(range(1, 9))
+PTBXL_VAL_FOLDS = (9,)
+
+
+def _require_wfdb():
+    """Raise a helpful error if wfdb is missing when PTB-XL loading is requested."""
+    if wfdb is None:
+        raise ImportError(
+            "wfdb is required for PTB-XL loading. Install dependencies with "
+            "`pip install -r requirements.txt`."
+        )
+
+
+def _parse_scp_codes(value) -> dict:
+    """Parse the SCP code dictionary stored as a string in ptbxl_database.csv."""
+    if isinstance(value, dict):
+        return value
+    if pd.isna(value):
+        return {}
+    return ast.literal_eval(value)
+
+
+def _get_record_path(dataset_path: str, relative_path: str) -> str:
+    """Build the wfdb record path without the file extension."""
+    return os.path.join(dataset_path, relative_path)
+
+
+def load_ptbxl_metadata(dataset_path: str, sampling_rate: int = 100) -> pd.DataFrame:
+    """
+    Load PTB-XL metadata and create a binary normal/abnormal label.
+
+    Label logic:
+      0 = only diagnostic superclass NORM
+      1 = any other diagnostic superclass present
+    """
+    dataset_path = os.path.abspath(dataset_path)
+    db_path = os.path.join(dataset_path, "ptbxl_database.csv")
+    scp_path = os.path.join(dataset_path, "scp_statements.csv")
+    if not os.path.exists(db_path):
+        raise FileNotFoundError(f"PTB-XL metadata file not found: {db_path}")
+    if not os.path.exists(scp_path):
+        raise FileNotFoundError(f"PTB-XL statements file not found: {scp_path}")
+
+    ptbxl_df = pd.read_csv(db_path)
+    ptbxl_df["scp_codes"] = ptbxl_df["scp_codes"].apply(_parse_scp_codes)
+
+    scp_df = pd.read_csv(scp_path, index_col=0)
+    diagnostic_df = scp_df[scp_df["diagnostic"] == 1]
+    code_to_superclass = diagnostic_df["diagnostic_class"].dropna().to_dict()
+
+    def diagnostic_superclasses(scp_codes: dict) -> list:
+        classes = {code_to_superclass[code] for code in scp_codes if code in code_to_superclass}
+        return sorted(classes)
+
+    ptbxl_df["diagnostic_superclasses"] = ptbxl_df["scp_codes"].apply(diagnostic_superclasses)
+    ptbxl_df = ptbxl_df[ptbxl_df["diagnostic_superclasses"].map(bool)].copy()
+    ptbxl_df["label"] = ptbxl_df["diagnostic_superclasses"].apply(
+        lambda classes: 0 if classes == ["NORM"] else 1
+    )
+
+    filename_col = "filename_lr" if sampling_rate == 100 else "filename_hr"
+    if filename_col not in ptbxl_df.columns:
+        raise ValueError(f"Sampling rate {sampling_rate} is unsupported for this PTB-XL metadata.")
+    ptbxl_df["record_path"] = ptbxl_df[filename_col].apply(lambda path: _get_record_path(dataset_path, path))
+
+    if "recording_date" in ptbxl_df.columns:
+        ptbxl_df["recording_date"] = pd.to_datetime(ptbxl_df["recording_date"], errors="coerce")
+
+    return ptbxl_df
+
+
+def load_ptbxl_signal(record_path: str, lead_index: int = 1) -> np.ndarray:
+    """Load one PTB-XL record and return a single lead as a 1D float array."""
+    _require_wfdb()
+    signal, _ = wfdb.rdsamp(record_path)
+    if signal.ndim == 1:
+        return signal.astype(np.float32)
+    if lead_index < 0 or lead_index >= signal.shape[1]:
+        lead_index = 0
+    return signal[:, lead_index].astype(np.float32)
+
+
+def _deduplicate_peaks(peaks: np.ndarray, min_distance: int) -> np.ndarray:
+    """Keep strong peaks while enforcing a refractory period."""
+    if len(peaks) == 0:
+        return peaks
+    filtered = [int(peaks[0])]
+    for peak in peaks[1:]:
+        if peak - filtered[-1] >= min_distance:
+            filtered.append(int(peak))
+    return np.asarray(filtered, dtype=np.int32)
+
+
+def estimate_r_peaks(signal: np.ndarray, sampling_rate: int) -> np.ndarray:
+    """Estimate R peaks using a lightweight local-maxima heuristic."""
+    centered = signal - np.median(signal)
+    scale = np.std(centered) + 1e-6
+    normalized = centered / scale
+    threshold = max(0.8, np.percentile(normalized, 92))
+    candidate_mask = (
+        (normalized[1:-1] > normalized[:-2]) &
+        (normalized[1:-1] > normalized[2:]) &
+        (normalized[1:-1] > threshold)
+    )
+    candidates = np.where(candidate_mask)[0] + 1
+    min_distance = max(1, int(0.25 * sampling_rate))
+    return _deduplicate_peaks(candidates, min_distance)
+
+
+def _window_values(signal: np.ndarray, start: int, end: int) -> np.ndarray:
+    start = max(0, start)
+    end = min(len(signal), end)
+    if start >= end:
+        return np.asarray([], dtype=np.float32)
+    return signal[start:end]
+
+
+def extract_ptbxl_features(signal: np.ndarray, sampling_rate: int) -> dict:
+    """
+    Derive simple, ECG-inspired features from a single PTB-XL lead.
+
+    These are lightweight heuristics so the LSTM can train on real records
+    without requiring a full clinical interval delineation pipeline.
+    """
+    signal = signal.astype(np.float32)
+    peaks = estimate_r_peaks(signal, sampling_rate)
+    rr_intervals = np.diff(peaks) / float(sampling_rate) if len(peaks) >= 2 else np.asarray([])
+
+    if len(rr_intervals) > 0 and rr_intervals.mean() > 0:
+        heart_rate = float(60.0 / rr_intervals.mean())
+        rr_variance = float(rr_intervals.var())
+    else:
+        heart_rate = 70.0
+        rr_variance = 0.0
+
+    qrs_durations = []
+    st_levels = []
+    p_amplitudes = []
+    t_amplitudes = []
+
+    for peak in peaks[: min(len(peaks), 20)]:
+        baseline_window = _window_values(signal, peak - int(0.25 * sampling_rate), peak - int(0.18 * sampling_rate))
+        baseline = float(baseline_window.mean()) if len(baseline_window) else float(np.median(signal))
+
+        qrs_window = _window_values(signal, peak - int(0.08 * sampling_rate), peak + int(0.08 * sampling_rate))
+        if len(qrs_window):
+            active = np.abs(qrs_window - baseline) > 0.5 * (np.std(signal) + 1e-6)
+            qrs_durations.append(active.sum() / sampling_rate * 1000.0)
+
+        st_window = _window_values(signal, peak + int(0.06 * sampling_rate), peak + int(0.12 * sampling_rate))
+        if len(st_window):
+            st_levels.append(float(st_window.mean() - baseline))
+
+        p_window = _window_values(signal, peak - int(0.20 * sampling_rate), peak - int(0.08 * sampling_rate))
+        if len(p_window):
+            p_amplitudes.append(float(p_window.max() - baseline))
+
+        t_window = _window_values(signal, peak + int(0.12 * sampling_rate), peak + int(0.32 * sampling_rate))
+        if len(t_window):
+            t_amplitudes.append(float(t_window.max() - baseline))
+
+    qrs_duration = float(np.mean(qrs_durations)) if qrs_durations else 95.0
+    st_elevation = float(np.mean(st_levels)) if st_levels else 0.0
+    p_wave_amplitude = float(np.mean(p_amplitudes)) if p_amplitudes else 0.12
+    t_wave_amplitude = float(np.mean(t_amplitudes)) if t_amplitudes else 0.25
+    pr_interval = float(np.clip(140.0 + rr_variance * 1000.0, 100.0, 240.0))
+    qt_interval = float(np.clip(320.0 + qrs_duration + heart_rate * 0.6, 320.0, 520.0))
+
+    return {
+        "heart_rate": heart_rate,
+        "pr_interval": pr_interval,
+        "qrs_duration": qrs_duration,
+        "qt_interval": qt_interval,
+        "st_elevation": st_elevation,
+        "p_wave_amplitude": p_wave_amplitude,
+        "t_wave_amplitude": t_wave_amplitude,
+        "rr_variance": rr_variance,
+    }
+
+
+def load_ptbxl_cnn_dataframe(
+    dataset_path: str,
+    sampling_rate: int = 100,
+    lead_index: int = 1,
+    limit: int | None = None,
+) -> pd.DataFrame:
+    """Load PTB-XL waveform records into the CNN dataframe format."""
+    metadata_df = load_ptbxl_metadata(dataset_path, sampling_rate=sampling_rate)
+    if limit is not None:
+        metadata_df = metadata_df.head(limit).copy()
+
+    records = []
+    for _, row in metadata_df.iterrows():
+        signal = load_ptbxl_signal(row["record_path"], lead_index=lead_index)
+        records.append({
+            "ecg_id": int(row["ecg_id"]),
+            "patient_id": int(row["patient_id"]),
+            "ecg_signal": signal,
+            "label": int(row["label"]),
+            "strat_fold": int(row["strat_fold"]),
+            "diagnostic_superclasses": row["diagnostic_superclasses"],
+        })
+
+    return pd.DataFrame(records)
+
+
+def load_ptbxl_sequence_dataframe(
+    dataset_path: str,
+    sampling_rate: int = 100,
+    lead_index: int = 1,
+    limit: int | None = None,
+) -> pd.DataFrame:
+    """
+    Load PTB-XL into the LSTM dataframe format using repeated records per patient.
+
+    Because PTB-XL is not a fixed monthly follow-up dataset, timestamps are derived
+    from each patient's recording order.
+    """
+    metadata_df = load_ptbxl_metadata(dataset_path, sampling_rate=sampling_rate)
+    if limit is not None:
+        metadata_df = metadata_df.head(limit).copy()
+
+    rows = []
+    sorted_df = metadata_df.sort_values(["patient_id", "recording_date", "ecg_id"])
+    for patient_id, group in sorted_df.groupby("patient_id"):
+        group = group.reset_index(drop=True)
+        if len(group) < 2:
+            continue
+
+        for timestamp, (_, row) in enumerate(group.iterrows()):
+            signal = load_ptbxl_signal(row["record_path"], lead_index=lead_index)
+            features = extract_ptbxl_features(signal, sampling_rate=sampling_rate)
+            rows.append({
+                "patient_id": int(patient_id),
+                "timestamp": timestamp,
+                "label": int(row["label"]),
+                "ecg_id": int(row["ecg_id"]),
+                "strat_fold": int(row["strat_fold"]),
+                **features,
+            })
+
+    return pd.DataFrame(rows)
 
 
 class ECGSequenceDataset(Dataset):
@@ -222,12 +471,20 @@ def generate_synthetic_sequences(n_patients: int = 200, seq_len: int = 12):
 
 def get_cnn_dataloaders(df: pd.DataFrame, batch_size: int = 32, val_split: float = 0.2):
     """Split dataframe into train/val and return DataLoaders for CNN."""
-    df = df.sample(frac=1, random_state=42).reset_index(drop=True)   # shuffle
-    split = int(len(df) * (1 - val_split))
-    train_df, val_df = df[:split], df[split:]
+    if "strat_fold" in df.columns and df["strat_fold"].notna().all():
+        train_df = df[df["strat_fold"].isin(PTBXL_TRAIN_FOLDS)].reset_index(drop=True)
+        val_df = df[df["strat_fold"].isin(PTBXL_VAL_FOLDS)].reset_index(drop=True)
+        if len(train_df) == 0 or len(val_df) == 0:
+            raise ValueError("PTB-XL fold-based split produced an empty train/val set.")
+    else:
+        df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+        split = int(len(df) * (1 - val_split))
+        train_df, val_df = df[:split], df[split:]
 
     train_ds = ECGImageDataset(train_df, augment=True)
     val_ds   = ECGImageDataset(val_df,   augment=False)
+    if len(train_ds) == 0 or len(val_ds) == 0:
+        raise ValueError("CNN dataloaders are empty. Check the dataset path, folds, or limit.")
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=2)
     val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=2)
@@ -238,13 +495,25 @@ def get_cnn_dataloaders(df: pd.DataFrame, batch_size: int = 32, val_split: float
 
 def get_lstm_dataloaders(df: pd.DataFrame, batch_size: int = 32, val_split: float = 0.2, seq_len: int = 12):
     """Split patients into train/val and return DataLoaders for LSTM."""
-    patient_ids = df["patient_id"].unique()
-    np.random.shuffle(patient_ids)
-    split = int(len(patient_ids) * (1 - val_split))
-    train_ids, val_ids = patient_ids[:split], patient_ids[split:]
+    if "strat_fold" in df.columns and df["strat_fold"].notna().all():
+        train_df = df[df["strat_fold"].isin(PTBXL_TRAIN_FOLDS)].copy()
+        val_df = df[df["strat_fold"].isin(PTBXL_VAL_FOLDS)].copy()
+        if len(train_df) == 0 or len(val_df) == 0:
+            raise ValueError("PTB-XL fold-based split produced an empty train/val set.")
+    else:
+        patient_ids = df["patient_id"].unique()
+        np.random.shuffle(patient_ids)
+        split = int(len(patient_ids) * (1 - val_split))
+        train_ids, val_ids = patient_ids[:split], patient_ids[split:]
+        train_df = df[df["patient_id"].isin(train_ids)]
+        val_df = df[df["patient_id"].isin(val_ids)]
 
-    train_ds = ECGSequenceDataset(df[df["patient_id"].isin(train_ids)], seq_len=seq_len)
-    val_ds   = ECGSequenceDataset(df[df["patient_id"].isin(val_ids)],   seq_len=seq_len)
+    train_ds = ECGSequenceDataset(train_df, seq_len=seq_len)
+    val_ds   = ECGSequenceDataset(val_df,   seq_len=seq_len)
+    if len(train_ds) == 0 or len(val_ds) == 0:
+        raise ValueError(
+            "LSTM dataloaders are empty. On PTB-XL, try reducing --seq-len or increasing the number of loaded records."
+        )
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False)

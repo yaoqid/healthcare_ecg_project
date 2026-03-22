@@ -15,39 +15,36 @@ import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import os, sys, json
+import json
+import os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from models.cnn_model  import get_model as get_cnn
 from models.lstm_model import get_model as get_lstm
 from models.llm_assistant import ECGAssistant
 from data.data_loader import (
+    extract_ptbxl_features,
     ecg_signal_to_image,
+    load_ptbxl_metadata,
+    load_ptbxl_signal,
     generate_synthetic_ecg,
     generate_synthetic_sequences,
     FEATURE_COLUMNS,
 )
 
-
-# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-# Page config
-# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 st.set_page_config(
     page_title="ECG Heart Disease AI",
     page_icon="🫀",
     layout="wide",
 )
 
-
-# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-# Load models (cached so they only load once)
-# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 @st.cache_resource
 def load_models():
     cnn  = get_cnn(num_classes=2)
     lstm = get_lstm(input_size=8, num_classes=2)
     cnn.eval()
     lstm.eval()
+    lstm_metadata = {}
 
     # Load weights if checkpoint exists
     if os.path.exists("checkpoints/cnn_best.pt"):
@@ -59,10 +56,17 @@ def load_models():
     if os.path.exists("checkpoints/lstm_best.pt"):
         lstm.load_state_dict(torch.load("checkpoints/lstm_best.pt", map_location="cpu"))
         st.sidebar.success("✅ LSTM weights loaded")
+        if os.path.exists("checkpoints/lstm_metrics.json"):
+            try:
+                with open("checkpoints/lstm_metrics.json", "r") as f:
+                    lstm_metadata = json.load(f)
+                st.sidebar.success("✅ LSTM metadata loaded")
+            except Exception as exc:
+                st.sidebar.warning(f"⚠️ Could not read LSTM metadata: {exc}")
     else:
         st.sidebar.warning("⚠️ LSTM using random weights - train first!")
 
-    return cnn, lstm
+    return cnn, lstm, lstm_metadata
 
 
 @st.cache_resource
@@ -70,11 +74,134 @@ def load_assistant():
     return ECGAssistant()   # reads DEEPSEEK_API_KEY from env
 
 
-# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-# Prediction helpers
-# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+@st.cache_data(show_spinner=False)
+def load_ptbxl_metadata_cached(dataset_path: str, sampling_rate: int) -> pd.DataFrame:
+    """Cache PTB-XL metadata for interactive browsing in the app."""
+    metadata_df = load_ptbxl_metadata(dataset_path, sampling_rate=sampling_rate)
+    metadata_df = metadata_df.sort_values(["patient_id", "recording_date", "ecg_id"]).reset_index(drop=True)
+    metadata_df["history_order"] = metadata_df.groupby("patient_id").cumcount() + 1
+    metadata_df["patient_record_count"] = metadata_df.groupby("patient_id")["ecg_id"].transform("size")
+    return metadata_df
+
+
+@st.cache_data(show_spinner=False)
+def load_ptbxl_case(
+    dataset_path: str,
+    sampling_rate: int,
+    lead_index: int,
+    ecg_id: int,
+    max_history: int,
+) -> dict:
+    """Load one PTB-XL ECG record plus the selected patient's longitudinal history."""
+    metadata_df = load_ptbxl_metadata_cached(dataset_path, sampling_rate=sampling_rate)
+    match = metadata_df.loc[metadata_df["ecg_id"] == ecg_id]
+    if match.empty:
+        raise ValueError(f"ECG ID {ecg_id} was not found in the PTB-XL metadata.")
+
+    selected_row = match.iloc[0]
+    signal = load_ptbxl_signal(selected_row["record_path"], lead_index=lead_index)
+
+    patient_records = metadata_df.loc[metadata_df["patient_id"] == selected_row["patient_id"]].copy()
+    patient_records = patient_records.sort_values("history_order")
+    patient_history = patient_records.loc[
+        patient_records["history_order"] <= selected_row["history_order"]
+    ].tail(max_history).reset_index(drop=True)
+    if patient_history.empty:
+        patient_history = selected_row.to_frame().T.reset_index(drop=True)
+
+    feature_rows = []
+    for visit_idx, (_, row) in enumerate(patient_history.iterrows(), start=1):
+        visit_signal = load_ptbxl_signal(row["record_path"], lead_index=lead_index)
+        features = extract_ptbxl_features(visit_signal, sampling_rate=sampling_rate)
+        feature_rows.append({
+            "Visit": visit_idx,
+            "ecg_id": int(row["ecg_id"]),
+            "recording_date": None if pd.isna(row["recording_date"]) else str(pd.Timestamp(row["recording_date"]).date()),
+            "label": int(row["label"]),
+            "diagnostic_superclasses": ", ".join(row["diagnostic_superclasses"]),
+            **features,
+        })
+
+    sequence_df = pd.DataFrame(feature_rows)
+    return {
+        "signal": signal.astype(np.float32),
+        "sequence": sequence_df[FEATURE_COLUMNS].to_numpy(dtype=np.float32),
+        "metadata": {
+            "ecg_id": int(selected_row["ecg_id"]),
+            "patient_id": int(selected_row["patient_id"]),
+            "label": int(selected_row["label"]),
+            "diagnostic_superclasses": ", ".join(selected_row["diagnostic_superclasses"]),
+            "recording_date": None if pd.isna(selected_row["recording_date"]) else str(pd.Timestamp(selected_row["recording_date"]).date()),
+            "history_length": int(len(sequence_df)),
+            "available_history": int(selected_row["history_order"]),
+            "patient_record_count": int(selected_row["patient_record_count"]),
+        },
+        "history_table": sequence_df,
+    }
+
+
 CLASS_NAMES = ["Normal", "Abnormal"]
 RISK_NAMES  = ["Low Risk", "High Risk"]
+DEFAULT_FEATURE_VALUES = {
+    "heart_rate": 72.0,
+    "pr_interval": 160.0,
+    "qrs_duration": 95.0,
+    "qt_interval": 410.0,
+    "st_elevation": 0.02,
+    "p_wave_amplitude": 0.14,
+    "t_wave_amplitude": 0.32,
+    "rr_variance": 0.05,
+}
+FEATURE_RANGES = {
+    "heart_rate": (40.0, 160.0, 1.0),
+    "pr_interval": (100.0, 260.0, 1.0),
+    "qrs_duration": (60.0, 180.0, 1.0),
+    "qt_interval": (300.0, 520.0, 1.0),
+    "st_elevation": (-0.2, 0.4, 0.01),
+    "p_wave_amplitude": (0.05, 0.30, 0.01),
+    "t_wave_amplitude": (0.10, 0.60, 0.01),
+    "rr_variance": (0.01, 0.20, 0.01),
+}
+
+
+def build_custom_sequence(base_values: dict, trend_strength: float, variability: float, seq_len: int = 12) -> np.ndarray:
+    """Create a smooth longitudinal feature sequence from user-entered baseline values."""
+    months = np.arange(seq_len, dtype=np.float32)
+    sequence = []
+    scale = variability / 100.0
+
+    for feature_idx, feature_name in enumerate(FEATURE_COLUMNS):
+        base = base_values[feature_name]
+        drift_direction = 1.0 if feature_name in {"heart_rate", "qt_interval", "st_elevation", "rr_variance"} else -0.3
+        drift = trend_strength * drift_direction * np.linspace(0.0, 1.0, seq_len)
+        seasonal = np.sin((months + feature_idx) / 2.0) * scale * max(abs(base), 1.0) * 0.03
+        noise = np.random.normal(0.0, scale * max(abs(base), 1.0) * 0.015, seq_len)
+        values = base + drift + seasonal + noise
+        sequence.append(values)
+
+    return np.stack(sequence, axis=1).astype(np.float32)
+
+
+def build_custom_ecg_signal(
+    heart_rate: float,
+    st_elevation: float,
+    rr_variance: float,
+    noise_level: float,
+    signal_len: int = 500,
+) -> np.ndarray:
+    """Generate a synthetic ECG-like waveform shaped by key clinical controls."""
+    t = np.linspace(0, 6 * np.pi, signal_len, dtype=np.float32)
+    rate_scale = np.clip(heart_rate / 75.0, 0.6, 1.8)
+    qrs_scale = 1.0 + np.clip(st_elevation * 2.5, -0.3, 0.8)
+    rhythm_mod = 1.0 + rr_variance * np.sin(t / 3.0)
+
+    signal = (
+        0.18 * np.sin(t * rhythm_mod) +
+        qrs_scale * np.sin(2.1 * t * rate_scale + rr_variance * np.cos(t / 4.0)) +
+        0.25 * np.sin(0.5 * t + st_elevation * 3.0)
+    )
+    signal += noise_level * np.random.randn(signal_len).astype(np.float32)
+    return signal.astype(np.float32)
 
 
 def predict_cnn(model, signal: np.ndarray) -> dict:
@@ -98,23 +225,39 @@ def predict_cnn(model, signal: np.ndarray) -> dict:
     }
 
 
-def predict_lstm(model, sequence: np.ndarray) -> dict:
+def predict_lstm(model, sequence: np.ndarray, metadata: dict | None = None) -> dict:
     """Run LSTM on a patient feature sequence and return prediction dict."""
-    tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)   # (1, seq, features)
+    processed_sequence = np.asarray(sequence, dtype=np.float32)
+    threshold = 0.5
+
+    if metadata:
+        feature_mean = metadata.get("feature_mean")
+        feature_std = metadata.get("feature_std")
+        if feature_mean is not None and feature_std is not None:
+            mean = np.asarray(feature_mean, dtype=np.float32)
+            std = np.asarray(feature_std, dtype=np.float32)
+            std = np.where(std < 1e-6, 1.0, std)
+            processed_sequence = (processed_sequence - mean) / std
+        threshold = float(metadata.get("threshold", 0.5))
+
+    tensor = torch.tensor(processed_sequence, dtype=torch.float32).unsqueeze(0)   # (1, seq, features)
 
     with torch.no_grad():
         logits       = model(tensor)
         probs        = torch.softmax(logits, dim=1)[0]
         attn_weights = model.get_attention_weights(tensor)[0].numpy()
 
-    class_id   = probs.argmax().item()
     risk_score = probs[1].item()   # probability of high risk
+    class_id   = int(risk_score >= threshold)
 
     # Find trend direction
-    mid = len(sequence) // 2
-    first_half_hr  = sequence[:mid, 0].mean()   # heart rate col
-    second_half_hr = sequence[mid:, 0].mean()
-    trend = "increasing" if second_half_hr > first_half_hr else "stable/decreasing"
+    if len(sequence) < 2:
+        trend = "insufficient history"
+    else:
+        mid = max(1, len(sequence) // 2)
+        first_half_hr  = sequence[:mid, 0].mean()   # heart rate col
+        second_half_hr = sequence[mid:, 0].mean()
+        trend = "increasing" if second_half_hr > first_half_hr else "stable/decreasing"
 
     return {
         "risk_label":          RISK_NAMES[class_id],
@@ -122,12 +265,9 @@ def predict_lstm(model, sequence: np.ndarray) -> dict:
         "trend":               trend,
         "attention_weights":   attn_weights.tolist(),
         "most_important_month": int(attn_weights.argmax()) + 1,
+        "decision_threshold":  threshold,
     }
 
-
-# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-# UI
-# 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 def main():
     st.title("🫀 ECG Heart Disease Detection & AI Assistant")
@@ -138,14 +278,13 @@ def main():
     st.divider()
 
     # Load everything
-    cnn_model, lstm_model = load_models()
+    cnn_model, lstm_model, lstm_metadata = load_models()
     assistant = load_assistant()
 
-    # 鈹€鈹€ Sidebar: controls 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     st.sidebar.header("⚙️ Settings")
     demo_mode = st.sidebar.radio(
         "Data source",
-        ["🎲 Use demo patient (synthetic)", "📂 Enter custom values"],
+        ["🎲 Use demo patient (synthetic)", "📂 Enter custom values", "🫀 Load PTB-XL record"],
     )
     api_key_input = st.sidebar.text_input(
         "DeepSeek API Key (optional)", type="password",
@@ -154,8 +293,12 @@ def main():
     if api_key_input:
         assistant.set_api_key(api_key_input)
 
-    # 鈹€鈹€ Generate or receive data 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     st.header("📊 Step 1 - Patient Data")
+    patient_note = None
+    sequence_axis_label = "Month"
+    waveform_title = "Patient ECG Signal"
+    trend_title = "Patient Clinical History"
+    selected_metadata = None
 
     if demo_mode.startswith("🎲"):
         seed = st.sidebar.slider("Random patient seed", 0, 99, 42)
@@ -170,15 +313,129 @@ def main():
         seq_df = generate_synthetic_sequences(n_patients=1, seq_len=18)
         sequence = seq_df[FEATURE_COLUMNS].values[:12]   # 12 timesteps
 
-        st.info(f"🎲 Showing synthetic patient (seed={seed}). True label: **{CLASS_NAMES[true_label]}**")
-    else:
-        st.warning("Custom input coming soon! Using synthetic data for now.")
-        ecg_df = generate_synthetic_ecg(n_samples=1, signal_len=500)
-        signal = ecg_df.iloc[0]["ecg_signal"]
-        seq_df = generate_synthetic_sequences(n_patients=1, seq_len=18)
-        sequence = seq_df[FEATURE_COLUMNS].values[:12]
+        patient_note = f"🎲 Showing synthetic patient (seed={seed}). True label: **{CLASS_NAMES[true_label]}**"
+    elif demo_mode.startswith("📂"):
+        custom_seed = st.sidebar.slider("Custom patient seed", 0, 99, 7)
+        np.random.seed(custom_seed)
+        st.markdown("Enter baseline measurements and let the app build a 12-month patient trajectory.")
 
-    # 鈹€鈹€ Show ECG plot 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        custom_col1, custom_col2 = st.columns(2)
+        base_values = {}
+        for idx, feature_name in enumerate(FEATURE_COLUMNS):
+            min_value, max_value, step = FEATURE_RANGES[feature_name]
+            target_col = custom_col1 if idx < 4 else custom_col2
+            with target_col:
+                base_values[feature_name] = st.number_input(
+                    feature_name.replace("_", " ").title(),
+                    min_value=min_value,
+                    max_value=max_value,
+                    value=DEFAULT_FEATURE_VALUES[feature_name],
+                    step=step,
+                    format="%.2f" if step < 1 else "%.0f",
+                )
+
+        trend_strength = st.slider("Trend strength across 12 months", -20.0, 20.0, 4.0, 0.5)
+        variability = st.slider("Month-to-month variability", 0.0, 30.0, 8.0, 0.5)
+        noise_level = st.slider("ECG waveform noise", 0.0, 0.8, 0.12, 0.01)
+
+        sequence = build_custom_sequence(base_values, trend_strength, variability)
+        signal = build_custom_ecg_signal(
+            heart_rate=base_values["heart_rate"],
+            st_elevation=base_values["st_elevation"],
+            rr_variance=base_values["rr_variance"],
+            noise_level=noise_level,
+        )
+        patient_note = "Custom patient profile created. You can now run analysis on the generated waveform and history."
+    else:
+        st.markdown("Load a real PTB-XL record from a local extracted dataset folder.")
+        default_seq_len = int(lstm_metadata.get("sequence_length", 3)) if lstm_metadata else 3
+        ptbxl_dir = st.sidebar.text_input(
+            "PTB-XL folder",
+            value=os.getenv("PTBXL_DIR", ""),
+            help="Folder containing ptbxl_database.csv, scp_statements.csv, and records100/ or records500/",
+        ).strip()
+        sampling_rate = st.sidebar.selectbox("PTB-XL sampling rate", [100, 500], index=0)
+        lead_index = st.sidebar.number_input("Lead index", min_value=0, max_value=11, value=1, step=1)
+        max_history = st.sidebar.slider("History window", 1, 12, max(6, default_seq_len) if max(6, default_seq_len) <= 12 else 12)
+        min_history = st.sidebar.slider("Minimum visits required for LSTM", 1, max_history, min(default_seq_len, max_history))
+
+        if not ptbxl_dir:
+            st.info("Enter a PTB-XL folder path in the sidebar to browse real ECG records.")
+            return
+
+        try:
+            metadata_df = load_ptbxl_metadata_cached(ptbxl_dir, sampling_rate)
+        except Exception as exc:
+            st.error(f"Could not load PTB-XL metadata: {exc}")
+            return
+
+        label_filter = st.selectbox("Filter records", ["All records", "Normal only", "Abnormal only"])
+        if label_filter == "Normal only":
+            filtered_df = metadata_df.loc[metadata_df["label"] == 0].copy()
+        elif label_filter == "Abnormal only":
+            filtered_df = metadata_df.loc[metadata_df["label"] == 1].copy()
+        else:
+            filtered_df = metadata_df.copy()
+
+        filtered_df = filtered_df.loc[filtered_df["history_order"] >= min_history].copy()
+        if filtered_df.empty:
+            st.warning("No PTB-XL records match the current filters and minimum history requirement.")
+            return
+
+        filtered_df = filtered_df.sort_values("ecg_id").reset_index(drop=True)
+        record_index = st.slider("Browse PTB-XL record", 0, len(filtered_df) - 1, 0)
+        selected_row = filtered_df.iloc[record_index]
+
+        try:
+            ptbxl_case = load_ptbxl_case(
+                ptbxl_dir,
+                sampling_rate=int(sampling_rate),
+                lead_index=int(lead_index),
+                ecg_id=int(selected_row["ecg_id"]),
+                max_history=int(max_history),
+            )
+        except Exception as exc:
+            st.error(f"Could not load the selected PTB-XL record: {exc}")
+            return
+
+        signal = ptbxl_case["signal"]
+        sequence = ptbxl_case["sequence"]
+        selected_metadata = ptbxl_case["metadata"]
+        sequence_axis_label = "Visit"
+        waveform_title = f"PTB-XL ECG Record {selected_metadata['ecg_id']}"
+        trend_title = f"PTB-XL Patient History ({selected_metadata['history_length']} visits)"
+        patient_note = (
+            f"Loaded PTB-XL ECG **{selected_metadata['ecg_id']}** for patient **{selected_metadata['patient_id']}**. "
+            f"Dataset label: **{CLASS_NAMES[selected_metadata['label']]}**. "
+            f"Diagnostic class: **{selected_metadata['diagnostic_superclasses']}**."
+        )
+
+        info_col1, info_col2, info_col3 = st.columns(3)
+        info_col1.metric("ECG ID", selected_metadata["ecg_id"])
+        info_col2.metric("Patient ID", selected_metadata["patient_id"])
+        info_col3.metric("History Length", selected_metadata["history_length"])
+        extra_col1, extra_col2 = st.columns(2)
+        extra_col1.metric("Available History", selected_metadata["available_history"])
+        extra_col2.metric("Total Patient Records", selected_metadata["patient_record_count"])
+        if selected_metadata["recording_date"]:
+            st.caption(f"Recording date: {selected_metadata['recording_date']}")
+        if selected_metadata["history_length"] < default_seq_len:
+            st.warning(
+                f"This PTB-XL case has only {selected_metadata['history_length']} visit(s) in the selected history window. "
+                f"The LSTM was trained with seq_len={default_seq_len}, so temporal interpretation will be limited."
+            )
+        st.dataframe(
+            ptbxl_case["history_table"][["Visit", "ecg_id", "recording_date", "diagnostic_superclasses"] + FEATURE_COLUMNS],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    if patient_note:
+        if demo_mode.startswith("📂"):
+            st.success(patient_note)
+        else:
+            st.info(patient_note)
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -187,7 +444,7 @@ def main():
         ax.plot(signal, color="#e63946", linewidth=1)
         ax.set_xlabel("Sample")
         ax.set_ylabel("Amplitude (mV)")
-        ax.set_title("Patient ECG Signal")
+        ax.set_title(waveform_title)
         ax.grid(alpha=0.3)
         st.pyplot(fig)
         plt.close(fig)
@@ -195,20 +452,26 @@ def main():
     with col2:
         st.subheader("Feature Trends (LSTM Input)")
         feature_df = pd.DataFrame(sequence, columns=FEATURE_COLUMNS)
-        feature_df["Month"] = range(1, 13)
+        feature_df[sequence_axis_label] = range(1, len(feature_df) + 1)
         fig2, ax2 = plt.subplots(figsize=(8, 3))
-        ax2.plot(feature_df["Month"], feature_df["heart_rate"],   label="Heart Rate", color="#457b9d")
-        ax2.plot(feature_df["Month"], feature_df["qt_interval"] / 10, label="QT/10", color="#e9c46a")
+        if len(feature_df) == 1:
+            ax2.scatter(feature_df[sequence_axis_label], feature_df["heart_rate"], label="Heart Rate", color="#457b9d", s=70)
+            ax2.scatter(feature_df[sequence_axis_label], feature_df["qt_interval"] / 10, label="QT/10", color="#e9c46a", s=70)
+            ax2.set_xlim(0.5, 1.5)
+        else:
+            ax2.plot(feature_df[sequence_axis_label], feature_df["heart_rate"], label="Heart Rate", color="#457b9d", marker="o")
+            ax2.plot(feature_df[sequence_axis_label], feature_df["qt_interval"] / 10, label="QT/10", color="#e9c46a", marker="o")
         ax2.legend()
-        ax2.set_xlabel("Month")
-        ax2.set_title("Patient Clinical History")
+        ax2.set_xlabel(sequence_axis_label)
+        ax2.set_title(trend_title)
         ax2.grid(alpha=0.3)
         st.pyplot(fig2)
         plt.close(fig2)
+        if len(feature_df) == 1:
+            st.caption("Only one visit is available in the selected PTB-XL history window, so the feature chart shows single-point markers instead of a trend line.")
 
     st.divider()
 
-    # 鈹€鈹€ Run models 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     st.header("🧠 Step 2 - AI Analysis")
 
     if st.button("🔍 Analyse Patient", type="primary"):
@@ -216,11 +479,12 @@ def main():
             cnn_result = predict_cnn(cnn_model, signal)
 
         with st.spinner("Running LSTM risk assessment..."):
-            lstm_result = predict_lstm(lstm_model, sequence)
+            lstm_result = predict_lstm(lstm_model, sequence, lstm_metadata)
 
         # Store in session state so analysis stays visible across reruns (e.g., chat input)
         st.session_state["cnn_result"] = cnn_result
         st.session_state["lstm_result"] = lstm_result
+        st.session_state["source_metadata"] = selected_metadata
         assistant.set_patient_context(cnn_result, lstm_result)
         st.session_state["assistant"] = assistant
         st.session_state["chat_history"] = []
@@ -244,28 +508,42 @@ def main():
 
         with col4:
             risk_color = "🔶" if cnn_result["class_id"] == 1 else "🟝"
+            time_unit = "Visit" if st.session_state.get("source_metadata") else "Month"
             st.metric(
                 f"{risk_color} LSTM Risk Level",
                 lstm_result["risk_label"],
                 f"Score: {lstm_result['risk_score']:.2f} | Trend: {lstm_result['trend']}"
             )
             st.progress(lstm_result["risk_score"])
-            st.caption(f"Most critical period: Month {lstm_result['most_important_month']}")
+            st.caption(
+                f"Most critical period: {time_unit} {lstm_result['most_important_month']} | "
+                f"Threshold: {lstm_result['decision_threshold']:.2f}"
+            )
+
+        if st.session_state.get("source_metadata"):
+            source_metadata = st.session_state["source_metadata"]
+            st.caption(
+                f"Reference label from PTB-XL: {CLASS_NAMES[source_metadata['label']]} | "
+                f"Diagnostic class: {source_metadata['diagnostic_superclasses']}"
+            )
 
         # Attention weight chart
-        st.subheader("🔎 LSTM Attention — Which months influenced the prediction most?")
+        axis_label = "Visit" if st.session_state.get("source_metadata") else "Month"
+        st.subheader(f"🔎 LSTM Attention — Which {axis_label.lower()}s influenced the prediction most?")
         attn = np.array(lstm_result["attention_weights"])
         fig3, ax3 = plt.subplots(figsize=(10, 2))
-        ax3.bar(range(1, 13), attn, color=["#e63946" if a == attn.max() else "#457b9d" for a in attn])
-        ax3.set_xlabel("Month")
+        x_positions = range(1, len(attn) + 1)
+        ax3.bar(x_positions, attn, color=["#e63946" if a == attn.max() else "#457b9d" for a in attn])
+        ax3.set_xlabel(axis_label)
         ax3.set_ylabel("Attention Weight")
         ax3.set_title("Temporal Attention Weights (red = most important)")
         st.pyplot(fig3)
         plt.close(fig3)
+        if len(attn) == 1:
+            st.caption("Attention is 1.0 for the only available visit. To see a meaningful temporal distribution, choose a PTB-XL record with more history.")
 
     st.divider()
 
-    # 鈹€鈹€ LLM Chat 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     st.header("💬 Step 3 - Ask the AI Assistant")
     st.markdown(
         "Ask questions in plain English about the ECG results. "
@@ -275,6 +553,15 @@ def main():
     if "assistant" not in st.session_state:
         st.info("👆 Click **Analyse Patient** first to enable the assistant.")
     else:
+        if st.session_state["assistant"].client is None and "cnn_result" in st.session_state and "lstm_result" in st.session_state:
+            st.info("No DeepSeek API key detected. A local summary is shown below, and chat will be disabled until a key is provided.")
+            st.markdown(
+                ECGAssistant.fallback_summary(
+                    st.session_state["cnn_result"],
+                    st.session_state["lstm_result"],
+                )
+            )
+
         # Display chat history
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
@@ -284,7 +571,8 @@ def main():
                 st.markdown(msg["content"])
 
         # Chat input
-        if prompt := st.chat_input("Ask a question about the ECG results..."):
+        chat_disabled = st.session_state["assistant"].client is None
+        if prompt := st.chat_input("Ask a question about the ECG results...", disabled=chat_disabled):
             st.session_state["chat_history"].append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)

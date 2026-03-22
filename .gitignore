@@ -1,7 +1,6 @@
-
-
 # Virtual environments
 .venv/
+.venv-1/
 venv/
 env/
 ENV/
@@ -52,18 +51,8 @@ data/raw/
 *.npy
 *.npz
 
-=======
-venv/
-.venv/
-env/
-ENV/
-
-__pycache__/
-*.pyc
-
-.vscode/
-.idea/
-
-data/raw/
-*.npy
-*.pth
+# Local datasets
+ptb-xl/
+ptb_xl/
+records100/
+records500/
