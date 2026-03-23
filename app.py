@@ -276,8 +276,20 @@ def main():
             )
             return
 
-        sampling_rate = st.sidebar.selectbox("PTB-XL sampling rate", [100, 500], index=0)
-        lead_index = st.sidebar.number_input("Lead index", min_value=0, max_value=11, value=1, step=1)
+        sampling_rate = 100
+        lead_names = [
+            "I (Lateral)", "II (Inferior)", "III (Inferior)",
+            "AVR (Right)", "AVL (Lateral)", "AVF (Inferior)",
+            "V1 (Septal)", "V2 (Septal)", "V3 (Anterior)",
+            "V4 (Anterior)", "V5 (Lateral)", "V6 (Lateral)",
+        ]
+        lead_index = st.sidebar.selectbox(
+            "ECG Lead",
+            options=range(12),
+            index=1,
+            format_func=lambda i: lead_names[i],
+            help="Each lead views the heart from a different angle. Lead II is the most common for rhythm analysis.",
+        )
         max_history = st.sidebar.slider("History window", 1, 12, max(6, default_seq_len) if max(6, default_seq_len) <= 12 else 12)
         min_history = st.sidebar.slider("Minimum visits required for LSTM", 1, max_history, min(default_seq_len, max_history))
 
