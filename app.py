@@ -257,17 +257,20 @@ def main():
         st.markdown("Load a real PTB-XL record from a local extracted dataset folder.")
         default_seq_len = int(lstm_metadata.get("sequence_length", 3)) if lstm_metadata else 3
 
-        # Auto-detect PTB-XL folder: check env var, then default ./ptb-xl
+        # Auto-detect PTB-XL folder: check env var, then ./ptb-xl, then ./data/ptb-xl
         default_ptbxl = os.getenv("PTBXL_DIR", "")
         if not default_ptbxl:
-            candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ptb-xl")
-            if os.path.isdir(candidate):
-                default_ptbxl = candidate
+            project_root = os.path.dirname(os.path.abspath(__file__))
+            for candidate_rel in ("ptb-xl", os.path.join("data", "ptb-xl")):
+                candidate = os.path.join(project_root, candidate_rel)
+                if os.path.isdir(candidate):
+                    default_ptbxl = candidate
+                    break
 
         ptbxl_dir = default_ptbxl
         if not ptbxl_dir or not os.path.isdir(ptbxl_dir):
             st.error(
-                "PTB-XL dataset not found. Expected location: `./ptb-xl` "
+                "PTB-XL dataset not found. Expected location: `./data/ptb-xl` "
                 "(relative to the project root). Run `bash scripts/setup_ptbxl.sh` to download it, "
                 "or set the `PTBXL_DIR` environment variable to a custom path."
             )

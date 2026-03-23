@@ -126,9 +126,9 @@ By default this downloads the Kaggle mirror:
 - `khyeh0719/ptb-xl-dataset`
 
 and prepares it in:
-- `./ptb-xl`
+- `./data/ptb-xl`
 
-If `./ptb-xl` is already correctly set up, the script skips the download.
+If `./data/ptb-xl` is already correctly set up, the script skips the download.
 
 #### Step 3. Train both real-data models
 
@@ -146,7 +146,7 @@ This runs:
 streamlit run app.py
 ```
 
-In the app, select **Load PTB-XL record**. The app automatically finds the `./ptb-xl` folder in the project directory. You can also set the `PTBXL_DIR` environment variable to point to a different location.
+In the app, select **Load PTB-XL record**. The app automatically finds the `./data/ptb-xl` folder in the project directory. You can also set the `PTBXL_DIR` environment variable to point to a different location.
 
 For more meaningful temporal plots in PTB-XL mode, set **Minimum visits required for LSTM** to `3` in the sidebar.
 
@@ -155,13 +155,13 @@ For more meaningful temporal plots in PTB-XL mode, set **Minimum visits required
 ### Train CNN on PTB-XL manually
 
 ```bash
-python train_cnn.py --real-data --ptbxl-dir ./ptb-xl --sampling-rate 100
+python train_cnn.py --real-data --ptbxl-dir ./data/ptb-xl --sampling-rate 100
 ```
 
 ### Train LSTM on PTB-XL manually
 
 ```bash
-python train_lstm.py --real-data --ptbxl-dir ./ptb-xl --sampling-rate 100 --seq-len 3
+python train_lstm.py --real-data --ptbxl-dir ./data/ptb-xl --sampling-rate 100 --seq-len 3
 ```
 
 The improved LSTM pipeline now includes:

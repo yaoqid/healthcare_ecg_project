@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DATASET_SLUG="${1:-khyeh0719/ptb-xl-dataset}"
-OUTPUT_DIR="${2:-${PROJECT_ROOT}/ptb-xl}"
+OUTPUT_DIR="${2:-${PROJECT_ROOT}/data/ptb-xl}"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ptbxl_download.XXXXXX")"
 
 cleanup() {

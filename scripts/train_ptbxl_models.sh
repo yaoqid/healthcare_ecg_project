@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-PTBXL_DIR="${1:-${PROJECT_ROOT}/ptb-xl}"
+PTBXL_DIR="${1:-${PROJECT_ROOT}/data/ptb-xl}"
 SAMPLING_RATE="${2:-100}"
 SEQ_LEN="${3:-3}"
 
