@@ -1,4 +1,4 @@
-# 🫀 ECG Heart Disease Detection & AI Assistant
+# ECG Heart Disease Detection & AI Assistant
 
 An end-to-end ECG project with:
 - a CNN for ECG image classification
@@ -10,7 +10,7 @@ This project supports:
 - synthetic demo data
 - real PTB-XL ECG data
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
 healthcare_ecg_project/
@@ -31,7 +31,7 @@ healthcare_ecg_project/
 └── .gitignore
 ```
 
-## 🚀 Setup
+## Setup
 
 Run everything from the project root.
 
@@ -87,7 +87,7 @@ pip install kaggle
 python -c "import torch; print('torch', torch.__version__, '| cuda:', torch.cuda.is_available(), '| mps:', hasattr(torch.backends, 'mps') and torch.backends.mps.is_available())"
 ```
 
-## ⚡ Quick Start
+## Quick Start
 
 ### Option A: Use the project immediately with synthetic data
 
@@ -104,9 +104,7 @@ Launch the app:
 streamlit run app.py
 ```
 
-In the app, choose either:
-- `Use demo patient (synthetic)`
-- `Enter custom values`
+In the app, select **Use demo patient (synthetic)** to explore a generated patient.
 
 ### Option B: Use real PTB-XL data
 
@@ -148,15 +146,11 @@ This runs:
 streamlit run app.py
 ```
 
-In the app:
-1. choose `Load PTB-XL record`
-2. set the PTB-XL folder to `./ptb-xl` if needed
-3. pick a record with enough visit history for LSTM analysis
+In the app, select **Load PTB-XL record**. The app automatically finds the `./ptb-xl` folder in the project directory. You can also set the `PTBXL_DIR` environment variable to point to a different location.
 
-For more meaningful temporal plots in PTB-XL mode, set:
-- `Minimum visits required for LSTM` to `3`
+For more meaningful temporal plots in PTB-XL mode, set **Minimum visits required for LSTM** to `3` in the sidebar.
 
-## 🧠 Recommended Commands
+## Recommended Commands
 
 ### Train CNN on PTB-XL manually
 
@@ -190,7 +184,7 @@ Train from a custom folder:
 bash scripts/train_ptbxl_models.sh /path/to/ptb-xl 100 3
 ```
 
-## 📊 Notes on PTB-XL in This Project
+## Notes on PTB-XL in This Project
 
 - The CNN uses real PTB-XL waveforms and a binary label: `NORM` vs `non-NORM`.
 - The CNN loader uses PTB-XL `strat_fold`: folds `1-8` for training and fold `9` for validation.
@@ -198,7 +192,7 @@ bash scripts/train_ptbxl_models.sh /path/to/ptb-xl 100 3
 - Instead, the LSTM builds short patient histories from repeated PTB-XL records and extracts lightweight waveform-derived features.
 - Shorter sequence lengths such as `2` or `3` are usually more practical than long histories on PTB-XL.
 
-## 🛠 Troubleshooting
+## Troubleshooting
 
 - **`torch` is missing**
   - Install PyTorch first, then run `pip install -r requirements.txt`.
@@ -213,11 +207,11 @@ bash scripts/train_ptbxl_models.sh /path/to/ptb-xl 100 3
 
 - **App PTB-XL mode shows weak temporal plots**
   - Many PTB-XL patients only have one usable visit.
-  - Increase `Minimum visits required for LSTM` to `3` in the app sidebar.
+  - Increase **Minimum visits required for LSTM** to `3` in the app sidebar.
 
 - **No GPU available**
   - The project still runs on CPU; training will just be slower.
 
-## ⚠️ Medical Disclaimer
+## Medical Disclaimer
 
 This project is for education and research only. It is not a medical device and must not be used for clinical diagnosis.
