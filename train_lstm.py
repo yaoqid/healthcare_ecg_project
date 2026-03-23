@@ -1,13 +1,4 @@
-"""
-Train the LSTM Model
----------------------
-Run this script to train the patient risk trend predictor.
-
-Usage:
-    python train_lstm.py
-    python train_lstm.py --real-data --ptbxl-dir /path/to/ptb-xl --seq-len 3
-    python train_lstm.py --epochs 30 --seq-len 12
-"""
+"""Train the LSTM risk model on synthetic sequences or PTB-XL histories."""
 
 import argparse
 import json
@@ -34,7 +25,7 @@ from data.data_loader import generate_synthetic_sequences, get_lstm_dataloaders,
 
 
 def train_one_epoch(model, loader, optimizer, criterion, device):
-    """Run one training epoch and return average loss and argmax accuracy."""
+    """Run one training epoch and return mean loss and argmax accuracy."""
     model.train()
     total_loss, correct, total = 0.0, 0, 0
 
@@ -58,7 +49,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
 
 @torch.no_grad()
 def evaluate(model, loader, criterion, device):
-    """Collect validation loss and positive-class probabilities."""
+    """Evaluate the model and return loss, accuracy, labels, and positive-class scores."""
     model.eval()
     total_loss, correct, total = 0.0, 0, 0
     all_labels, all_probs = [], []
@@ -122,7 +113,7 @@ def compute_metrics(labels, probs, threshold: float):
 
 
 def describe_label_distribution(name: str, labels) -> dict:
-    """Print and return class counts for quick imbalance inspection."""
+    """Print and return class counts for the current split."""
     counts = np.bincount(np.asarray(labels, dtype=np.int64), minlength=2)
     total = counts.sum()
     distribution = {
@@ -138,7 +129,7 @@ def describe_label_distribution(name: str, labels) -> dict:
 
 
 def build_class_weights(labels, device: torch.device) -> torch.Tensor:
-    """Create inverse-frequency class weights for CrossEntropyLoss."""
+    """Create inverse-frequency class weights for the training split."""
     counts = np.bincount(np.asarray(labels, dtype=np.int64), minlength=2).astype(np.float32)
     counts = np.maximum(counts, 1.0)
     weights = counts.sum() / (len(counts) * counts)
@@ -189,7 +180,7 @@ def tune_threshold(labels, probs, metric_name: str) -> tuple[float, dict]:
 
 
 def compute_feature_stats(sequence_dataset) -> tuple[np.ndarray, np.ndarray]:
-    """Compute per-feature mean/std from the training sequences only."""
+    """Compute per-feature mean and std from the training sequences only."""
     stacked = np.concatenate(sequence_dataset.sequences, axis=0).astype(np.float32)
     mean = stacked.mean(axis=0)
     std = stacked.std(axis=0)
@@ -198,7 +189,7 @@ def compute_feature_stats(sequence_dataset) -> tuple[np.ndarray, np.ndarray]:
 
 
 def apply_feature_standardization(sequence_dataset, mean: np.ndarray, std: np.ndarray):
-    """Normalize all sequences in-place using training-set statistics."""
+    """Normalize sequences in-place with training-set statistics."""
     sequence_dataset.sequences = [
         ((seq - mean) / std).astype(np.float32)
         for seq in sequence_dataset.sequences
@@ -206,7 +197,7 @@ def apply_feature_standardization(sequence_dataset, mean: np.ndarray, std: np.nd
 
 
 def set_seed(seed: int):
-    """Make synthetic runs reproducible."""
+    """Seed NumPy and PyTorch for repeatable runs."""
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():

@@ -1,13 +1,4 @@
-"""
-Data Loading & Preprocessing
-------------------------------
-Handles the PTB-XL ECG dataset for both:
-  1. CNN training  — converts ECG signals to 2D images
-  2. LSTM training — creates time-series sequences of patient features
-
-Dataset: PTB-XL (https://physionet.org/content/ptb-xl/1.0.3/)
-Download: pip install wfdb
-"""
+"""Data loading and preprocessing for synthetic data and PTB-XL."""
 
 import ast
 import os
@@ -17,7 +8,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import matplotlib
-matplotlib.use("Agg")   # non-interactive backend
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from PIL import Image
 import io
@@ -28,56 +19,35 @@ except ImportError:  # pragma: no cover - optional dependency at runtime
     wfdb = None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. ECG → IMAGE  (for CNN)
-# ─────────────────────────────────────────────────────────────────────────────
-
 def ecg_signal_to_image(signal: np.ndarray, image_size: int = 128) -> np.ndarray:
-    """
-    Convert a 1D ECG signal into a 2D grayscale image.
-
-    We plot the signal using matplotlib and save it to a pixel array.
-    The CNN then 'sees' the waveform just like a human looking at a printout.
-
-    signal: 1D numpy array of ECG voltage readings
-    returns: (image_size, image_size) grayscale numpy array
-    """
+    """Render a 1D ECG trace into a square grayscale image for the CNN."""
     fig, ax = plt.subplots(figsize=(2, 2), dpi=image_size // 2)
     ax.plot(signal, color="black", linewidth=0.5)
     ax.axis("off")
     fig.tight_layout(pad=0)
 
-    # Render to in-memory buffer → PIL Image → numpy
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0)
     plt.close(fig)
     buf.seek(0)
 
-    img = Image.open(buf).convert("L")          # "L" = grayscale
-    img = img.resize((image_size, image_size))  # standardise size
-    return np.array(img, dtype=np.float32) / 255.0   # normalise to [0, 1]
+    img = Image.open(buf).convert("L")
+    img = img.resize((image_size, image_size))
+    return np.array(img, dtype=np.float32) / 255.0
 
 
 class ECGImageDataset(Dataset):
-    """
-    PyTorch Dataset that serves ECG images and labels for the CNN.
-
-    Expected DataFrame columns:
-        'ecg_signal'  : 1D numpy array of the ECG waveform
-        'label'       : 0 = Normal, 1 = Abnormal
-    """
+    """Dataset that converts waveform rows into normalized grayscale images."""
 
     def __init__(self, dataframe: pd.DataFrame, image_size: int = 128, augment: bool = False):
         self.df = dataframe.reset_index(drop=True)
         self.image_size = image_size
 
-        # Standard normalisation (ImageNet-style adapted for grayscale)
         base_transforms = [
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5], std=[0.5]),   # [0,1] → [-1,1]
+            transforms.Normalize(mean=[0.5], std=[0.5]),
         ]
         if augment:
-            # Light augmentations — medical images need care here
             aug_transforms = [
                 transforms.RandomHorizontalFlip(p=0.3),
                 transforms.RandomAffine(degrees=5, translate=(0.05, 0.05)),
@@ -94,29 +64,22 @@ class ECGImageDataset(Dataset):
         signal = row["ecg_signal"]
         label  = int(row["label"])
 
-        # Convert signal to image
         img_array = ecg_signal_to_image(signal, self.image_size)
-
-        # PIL expects HWC, transforms.ToTensor → CHW
         img_pil = Image.fromarray((img_array * 255).astype(np.uint8))
         img_tensor = self.transform(img_pil)
 
         return img_tensor, torch.tensor(label, dtype=torch.long)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. TIME-SERIES SEQUENCES  (for LSTM)
-# ─────────────────────────────────────────────────────────────────────────────
-
 FEATURE_COLUMNS = [
-    "heart_rate",        # beats per minute
-    "pr_interval",       # ms (atrial → ventricular conduction)
-    "qrs_duration",      # ms (ventricular depolarisation)
-    "qt_interval",       # ms (ventricular depolarisation + repolarisation)
-    "st_elevation",      # mV (injury marker)
-    "p_wave_amplitude",  # mV
-    "t_wave_amplitude",  # mV
-    "rr_variance",       # heart rate variability proxy
+    "heart_rate",
+    "pr_interval",
+    "qrs_duration",
+    "qt_interval",
+    "st_elevation",
+    "p_wave_amplitude",
+    "t_wave_amplitude",
+    "rr_variance",
 ]
 
 PTBXL_TRAIN_FOLDS = tuple(range(1, 9))
@@ -147,13 +110,7 @@ def _get_record_path(dataset_path: str, relative_path: str) -> str:
 
 
 def load_ptbxl_metadata(dataset_path: str, sampling_rate: int = 100) -> pd.DataFrame:
-    """
-    Load PTB-XL metadata and create a binary normal/abnormal label.
-
-    Label logic:
-      0 = only diagnostic superclass NORM
-      1 = any other diagnostic superclass present
-    """
+    """Load PTB-XL metadata and map diagnostic superclasses to a binary label."""
     dataset_path = os.path.abspath(dataset_path)
     db_path = os.path.join(dataset_path, "ptbxl_database.csv")
     scp_path = os.path.join(dataset_path, "scp_statements.csv")
@@ -237,12 +194,7 @@ def _window_values(signal: np.ndarray, start: int, end: int) -> np.ndarray:
 
 
 def extract_ptbxl_features(signal: np.ndarray, sampling_rate: int) -> dict:
-    """
-    Derive simple, ECG-inspired features from a single PTB-XL lead.
-
-    These are lightweight heuristics so the LSTM can train on real records
-    without requiring a full clinical interval delineation pipeline.
-    """
+    """Estimate simple ECG-inspired features from a single lead."""
     signal = signal.astype(np.float32)
     peaks = estimate_r_peaks(signal, sampling_rate)
     rr_intervals = np.diff(peaks) / float(sampling_rate) if len(peaks) >= 2 else np.asarray([])
@@ -364,19 +316,10 @@ def load_ptbxl_sequence_dataframe(
 
 
 class ECGSequenceDataset(Dataset):
-    """
-    PyTorch Dataset for LSTM training.
-    Each sample is a TIME SEQUENCE of a patient's ECG features.
-
-    Expected DataFrame columns:
-        patient_id, timestamp, + all FEATURE_COLUMNS, label
-    """
+    """Dataset that turns per-visit feature tables into fixed-length sequences."""
 
     def __init__(self, dataframe: pd.DataFrame, seq_len: int = 12):
-        """
-        dataframe: sorted by (patient_id, timestamp)
-        seq_len:   number of timesteps per sample (e.g. 12 = 12 monthly visits)
-        """
+        """Build sliding-window sequences from a patient-level feature table."""
         self.sequences = []
         self.labels    = []
         self.seq_len   = seq_len
@@ -384,9 +327,9 @@ class ECGSequenceDataset(Dataset):
         for pid, group in dataframe.groupby("patient_id"):
             group = group.sort_values("timestamp")
             features = group[FEATURE_COLUMNS].values.astype(np.float32)
-            label    = int(group["label"].iloc[-1])   # label at end of sequence
+            label    = int(group["label"].iloc[-1])
 
-            # Sliding window — creates multiple samples per patient
+            # Overlapping windows increase sample count for patients with longer histories.
             for start in range(0, len(features) - seq_len + 1, seq_len // 2):
                 seq = features[start : start + seq_len]
                 if len(seq) == seq_len:
@@ -402,33 +345,21 @@ class ECGSequenceDataset(Dataset):
         return x, y
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Synthetic Data Generator  (for testing without downloading PTB-XL)
-# ─────────────────────────────────────────────────────────────────────────────
-
 def generate_synthetic_ecg(n_samples: int = 1000, signal_len: int = 500):
-    """
-    Generate fake ECG data so you can run the full pipeline immediately
-    without downloading the real dataset.
-
-    Normal ECGs:   clean sine-wave-like pattern
-    Abnormal ECGs: added noise + irregular intervals
-    """
+    """Generate simple synthetic waveforms for demo training and UI testing."""
     records = []
     for i in range(n_samples):
-        label = np.random.randint(0, 2)   # 0 = normal, 1 = abnormal
+        label = np.random.randint(0, 2)
         t = np.linspace(0, 4 * np.pi, signal_len)
 
         if label == 0:
-            # Normal: regular PQRST waves
             signal = (
-                0.2 * np.sin(t) +               # P wave
-                1.0 * np.sin(2 * t) +           # QRS complex
-                0.3 * np.sin(t / 2) +           # T wave
-                0.02 * np.random.randn(signal_len)  # minor noise
+                0.2 * np.sin(t) +
+                1.0 * np.sin(2 * t) +
+                0.3 * np.sin(t / 2) +
+                0.02 * np.random.randn(signal_len)
             )
         else:
-            # Abnormal: irregular rhythm + higher noise
             signal = (
                 0.1 * np.sin(t * np.random.uniform(0.8, 1.2)) +
                 1.5 * np.sin(2.5 * t + np.random.uniform(0, 1)) +
@@ -445,9 +376,9 @@ def generate_synthetic_sequences(n_patients: int = 200, seq_len: int = 12):
     rows = []
     for pid in range(n_patients):
         label = np.random.randint(0, 2)
-        base_hr = 60 + 20 * label + np.random.randn()   # higher HR → higher risk
+        base_hr = 60 + 20 * label + np.random.randn()
 
-        for month in range(seq_len + 6):  # extra months for sliding window
+        for month in range(seq_len + 6):
             rows.append({
                 "patient_id"     : pid,
                 "timestamp"      : month,
@@ -465,12 +396,8 @@ def generate_synthetic_sequences(n_patients: int = 200, seq_len: int = 12):
     return pd.DataFrame(rows)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. DataLoader helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
 def get_cnn_dataloaders(df: pd.DataFrame, batch_size: int = 32, val_split: float = 0.2):
-    """Split dataframe into train/val and return DataLoaders for CNN."""
+    """Create CNN train and validation loaders from a waveform dataframe."""
     if "strat_fold" in df.columns and df["strat_fold"].notna().all():
         train_df = df[df["strat_fold"].isin(PTBXL_TRAIN_FOLDS)].reset_index(drop=True)
         val_df = df[df["strat_fold"].isin(PTBXL_VAL_FOLDS)].reset_index(drop=True)
@@ -494,7 +421,7 @@ def get_cnn_dataloaders(df: pd.DataFrame, batch_size: int = 32, val_split: float
 
 
 def get_lstm_dataloaders(df: pd.DataFrame, batch_size: int = 32, val_split: float = 0.2, seq_len: int = 12):
-    """Split patients into train/val and return DataLoaders for LSTM."""
+    """Create LSTM train and validation loaders from a per-visit feature table."""
     if "strat_fold" in df.columns and df["strat_fold"].notna().all():
         train_df = df[df["strat_fold"].isin(PTBXL_TRAIN_FOLDS)].copy()
         val_df = df[df["strat_fold"].isin(PTBXL_VAL_FOLDS)].copy()
@@ -522,7 +449,6 @@ def get_lstm_dataloaders(df: pd.DataFrame, batch_size: int = 32, val_split: floa
     return train_loader, val_loader
 
 
-# ── Quick test ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("Testing synthetic data generation...")
     ecg_df  = generate_synthetic_ecg(n_samples=100)

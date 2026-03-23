@@ -1,14 +1,4 @@
-﻿"""
-ECG Heart Disease Detection - Streamlit App
---------------------------------------------
-The full pipeline in one interactive UI:
-  1. Use a synthetic demo patient or load a real PTB-XL record
-  2. CNN classifies the ECG image
-  3. LSTM predicts patient risk trend
-  4. DeepSeek LLM explains everything in plain English
-
-Run: streamlit run app.py
-"""
+﻿"""Streamlit interface for CNN, LSTM, and LLM-based ECG analysis."""
 
 import streamlit as st
 import torch
@@ -45,7 +35,6 @@ def load_models():
     lstm.eval()
     lstm_metadata = {}
 
-    # Load weights if checkpoint exists
     if os.path.exists("checkpoints/cnn_best.pt"):
         cnn.load_state_dict(torch.load("checkpoints/cnn_best.pt", map_location="cpu"))
         st.sidebar.success("CNN weights loaded")
@@ -70,7 +59,7 @@ def load_models():
 
 @st.cache_resource
 def load_assistant():
-    return ECGAssistant()   # reads DEEPSEEK_API_KEY from env
+    return ECGAssistant()
 
 
 @st.cache_data(show_spinner=False)
@@ -146,8 +135,8 @@ RISK_NAMES  = ["Low Risk", "High Risk"]
 def predict_cnn(model, signal: np.ndarray) -> dict:
     """Run CNN on an ECG signal and return prediction dict."""
     img = ecg_signal_to_image(signal, image_size=128)
-    tensor = torch.tensor(img).unsqueeze(0).unsqueeze(0)   # (1, 1, 128, 128)
-    tensor = (tensor - 0.5) / 0.5   # normalise
+    tensor = torch.tensor(img).unsqueeze(0).unsqueeze(0)
+    tensor = (tensor - 0.5) / 0.5
 
     with torch.no_grad():
         logits = model(tensor)
@@ -179,22 +168,21 @@ def predict_lstm(model, sequence: np.ndarray, metadata: dict | None = None) -> d
             processed_sequence = (processed_sequence - mean) / std
         threshold = float(metadata.get("threshold", 0.5))
 
-    tensor = torch.tensor(processed_sequence, dtype=torch.float32).unsqueeze(0)   # (1, seq, features)
+    tensor = torch.tensor(processed_sequence, dtype=torch.float32).unsqueeze(0)
 
     with torch.no_grad():
         logits       = model(tensor)
         probs        = torch.softmax(logits, dim=1)[0]
         attn_weights = model.get_attention_weights(tensor)[0].numpy()
 
-    risk_score = probs[1].item()   # probability of high risk
+    risk_score = probs[1].item()
     class_id   = int(risk_score >= threshold)
 
-    # Find trend direction
     if len(sequence) < 2:
         trend = "insufficient history"
     else:
         mid = max(1, len(sequence) // 2)
-        first_half_hr  = sequence[:mid, 0].mean()   # heart rate col
+        first_half_hr  = sequence[:mid, 0].mean()
         second_half_hr = sequence[mid:, 0].mean()
         trend = "increasing" if second_half_hr > first_half_hr else "stable/decreasing"
 
@@ -216,7 +204,6 @@ def main():
     )
     st.divider()
 
-    # Load everything
     cnn_model, lstm_model, lstm_metadata = load_models()
     assistant = load_assistant()
 
@@ -243,21 +230,19 @@ def main():
         seed = st.sidebar.slider("Random patient seed", 0, 99, 42)
         np.random.seed(seed)
 
-        # ECG signal
         ecg_df = generate_synthetic_ecg(n_samples=1, signal_len=500)
         signal = ecg_df.iloc[0]["ecg_signal"]
         true_label = ecg_df.iloc[0]["label"]
 
-        # Patient history
         seq_df = generate_synthetic_sequences(n_patients=1, seq_len=18)
-        sequence = seq_df[FEATURE_COLUMNS].values[:12]   # 12 timesteps
+        sequence = seq_df[FEATURE_COLUMNS].values[:12]
 
         patient_note = f"Showing synthetic patient (seed={seed}). True label: **{CLASS_NAMES[true_label]}**"
     else:
         st.markdown("Load a real PTB-XL record from a local extracted dataset folder.")
         default_seq_len = int(lstm_metadata.get("sequence_length", 3)) if lstm_metadata else 3
 
-        # Auto-detect PTB-XL folder: check env var, then ./ptb-xl, then ./data/ptb-xl
+        # Prefer an explicit PTBXL_DIR override, then fall back to common local dataset locations.
         default_ptbxl = os.getenv("PTBXL_DIR", "")
         if not default_ptbxl:
             project_root = os.path.dirname(os.path.abspath(__file__))
@@ -408,7 +393,7 @@ def main():
         with st.spinner("Running LSTM risk assessment..."):
             lstm_result = predict_lstm(lstm_model, sequence, lstm_metadata)
 
-        # Store in session state so analysis stays visible across reruns (e.g., chat input)
+        # Preserve the latest analysis across Streamlit reruns.
         st.session_state["cnn_result"] = cnn_result
         st.session_state["lstm_result"] = lstm_result
         st.session_state["source_metadata"] = selected_metadata
@@ -420,7 +405,6 @@ def main():
         cnn_result = st.session_state["cnn_result"]
         lstm_result = st.session_state["lstm_result"]
 
-        # Results cards
         col3, col4 = st.columns(2)
 
         with col3:
@@ -452,7 +436,6 @@ def main():
                 f"Diagnostic class: {source_metadata['diagnostic_superclasses']}"
             )
 
-        # Attention weight chart
         axis_label = "Visit" if st.session_state.get("source_metadata") else "Month"
         st.subheader(f"LSTM Attention — Which {axis_label.lower()}s influenced the prediction most?")
         attn = np.array(lstm_result["attention_weights"])
@@ -487,7 +470,6 @@ def main():
                 )
             )
 
-        # Display chat history
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
 
@@ -495,7 +477,6 @@ def main():
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        # Chat input
         chat_disabled = st.session_state["assistant"].client is None
         if prompt := st.chat_input("Ask a question about the ECG results...", disabled=chat_disabled):
             st.session_state["chat_history"].append({"role": "user", "content": prompt})

@@ -22,7 +22,15 @@ require_command() {
 }
 
 check_kaggle_auth() {
+  if [[ -f "${HOME}/.kaggle/access_token" ]]; then
+    return
+  fi
+
   if [[ -f "${HOME}/.kaggle/kaggle.json" ]]; then
+    return
+  fi
+
+  if [[ -n "${KAGGLE_API_TOKEN:-}" ]]; then
     return
   fi
 
@@ -32,8 +40,10 @@ check_kaggle_auth() {
 
   echo "Error: Kaggle credentials were not found." >&2
   echo "Set up one of the following before running this script:" >&2
-  echo "  1. ~/.kaggle/kaggle.json" >&2
-  echo "  2. KAGGLE_USERNAME and KAGGLE_KEY environment variables" >&2
+  echo "  1. ~/.kaggle/access_token" >&2
+  echo "  2. KAGGLE_API_TOKEN environment variable" >&2
+  echo "  3. ~/.kaggle/kaggle.json (legacy)" >&2
+  echo "  4. KAGGLE_USERNAME and KAGGLE_KEY environment variables (legacy)" >&2
   echo "You may also need to accept the dataset terms once on Kaggle in your browser." >&2
   exit 1
 }

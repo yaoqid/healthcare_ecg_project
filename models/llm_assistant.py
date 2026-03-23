@@ -1,8 +1,4 @@
-"""
-LLM Assistant - Powered by DeepSeek API
----------------------------------------
-Lets doctors or patients ask plain-English questions about ECG results.
-"""
+"""DeepSeek-backed assistant for explaining ECG model outputs."""
 
 import json
 import os
@@ -38,10 +34,7 @@ class ECGAssistant:
         model: str = "deepseek-chat",
         base_url: str = "https://api.deepseek.com",
     ):
-        """
-        Initialise the assistant.
-        api_key: your DeepSeek API key (or set DEEPSEEK_API_KEY env variable)
-        """
+        """Create an assistant client and initialize empty conversation state."""
         self._api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
         self._base_url = base_url
         self.client = OpenAI(api_key=self._api_key, base_url=base_url) if self._api_key else None
@@ -177,7 +170,7 @@ if __name__ == "__main__":
         "most_important_month": 10,
     }
 
-    assistant = ECGAssistant()  # reads DEEPSEEK_API_KEY from environment if configured
+    assistant = ECGAssistant()
     assistant.set_patient_context(cnn_result, lstm_result)
 
     print("ECG Assistant ready. Type 'quit' to exit.\n")
