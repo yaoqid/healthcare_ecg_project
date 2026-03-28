@@ -17,7 +17,8 @@ healthcare_ecg_project/
 │   └── train_ptbxl_models.sh
 ├── data/
 │   ├── __init__.py
-│   └── data_loader.py
+│   ├── data_loader.py
+│   └── ptb-xl/              # downloaded via setup script
 ├── models/
 │   ├── __init__.py
 │   ├── cnn_model.py
