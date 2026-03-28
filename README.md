@@ -193,9 +193,20 @@ If that works, Kaggle is configured correctly.
 
 #### Step 2. Download and prepare PTB-XL
 
+**macOS / Linux**
 ```bash
 bash scripts/setup_ptbxl.sh
 ```
+
+**Windows (PowerShell)**
+
+The setup script requires bash. You can either run it through Git Bash, or download the dataset manually:
+
+```powershell
+kaggle datasets download khyeh0719/ptb-xl-dataset -p data\ptb-xl --unzip
+```
+
+If the download creates a nested subfolder, move the contents so that `data\ptb-xl\ptbxl_database.csv` exists at that path.
 
 By default this downloads:
 - `khyeh0719/ptb-xl-dataset`
@@ -207,8 +218,15 @@ If that folder is already correctly set up, the script skips the download.
 
 #### Step 3. Train both real-data models
 
+**macOS / Linux**
 ```bash
 bash scripts/train_ptbxl_models.sh
+```
+
+**Windows (PowerShell)**
+```powershell
+python train_cnn.py --real-data --ptbxl-dir ./data/ptb-xl --sampling-rate 100
+python train_lstm.py --real-data --ptbxl-dir ./data/ptb-xl --sampling-rate 100 --seq-len 3
 ```
 
 This runs:
